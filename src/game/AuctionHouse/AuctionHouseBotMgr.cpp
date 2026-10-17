@@ -11,6 +11,8 @@
 #include "TransactionLog.h"
 #include "Utilities/Random.h"
 
+#include <vector>
+
 INSTANTIATE_SINGLETON_1(AuctionHouseBotMgr);
 
 AuctionHouseBotMgr::~AuctionHouseBotMgr()
@@ -248,10 +250,53 @@ bool AuctionHouseBotMgr::TryBuy(AuctionEntry* auction, AuctionHouseObject* aucti
     return true;
 }
 
+uint32 AuctionHouseBotMgr::RemoveOwnListings()
+{
+    if (!m_loaded)
+        return 0;
+
+    ASSERT(m_auctionHouseEntry);
+    AuctionHouseObject* auctionHouse = sAuctionMgr.GetAuctionsMap(m_auctionHouseEntry);
+    if (!auctionHouse)
+        return 0;
+
+    std::vector<AuctionEntry*> ours;
+    for (auto const& itr : *auctionHouse->GetAuctions())
+    {
+        AuctionEntry* auction = itr.second;
+        if (auction && auction->owner == 0 && auction->bidder == 0)
+            ours.push_back(auction);
+    }
+
+    for (AuctionEntry* auction : ours)
+    {
+        if (Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow))
+        {
+            sAuctionMgr.RemoveAItem(auction->itemGuidLow);
+            CharacterDatabase.PExecute("DELETE FROM `item_instance` WHERE `guid` = '%u'", auction->itemGuidLow);
+            delete item;
+        }
+        auctionHouse->RemoveAuction(auction);
+        auction->DeleteFromDB();
+        delete auction;
+    }
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "AHBot::RemoveOwnListings() : Removed %u listings.", uint32(ours.size()));
+    return uint32(ours.size());
+}
+
 bool ChatHandler::HandleAHBotUpdateCommand(char *args)
 {
     sAuctionHouseBotMgr.Update(true);
     SendSysMessage("[AHBot] Update finished.");
+    return true;
+}
+
+bool ChatHandler::HandleAHBotRefreshCommand(char *args)
+{
+    uint32 removed = sAuctionHouseBotMgr.RemoveOwnListings();
+    sAuctionHouseBotMgr.Update(true);
+    PSendSysMessage("[AHBot] Refresh finished: %u listings replaced with new ones.", removed);
     return true;
 }
 

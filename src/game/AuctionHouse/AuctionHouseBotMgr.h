@@ -49,6 +49,9 @@ class AuctionHouseBotMgr
         bool TryBuy(AuctionEntry* auction, AuctionHouseObject* auctionHouse);
         // Highest price per piece the bot sells the item for, 0 if it does not sell it.
         uint32 GetReferencePrice(uint32 itemEntry) const;
+        // Removes the bot's own listings that nobody has bid on (so that Update can put up new ones).
+        // Returns how many were removed.
+        uint32 RemoveOwnListings();
 
     protected:
         std::vector<AuctionHouseBotEntry> m_items;
