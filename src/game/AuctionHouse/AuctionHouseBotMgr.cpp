@@ -7,6 +7,8 @@
 #include "AuctionHouseBotMgr.h"
 #include "Config/Config.h"
 #include "Chat.h"
+#include "World.h"
+#include "TransactionLog.h"
 #include "Utilities/Random.h"
 
 INSTANTIATE_SINGLETON_1(AuctionHouseBotMgr);
@@ -69,6 +71,10 @@ void AuctionHouseBotMgr::Load()
     m_config->enable         = sConfig.GetBoolDefault("AHBot.Enable", false);
     m_config->ahfid          = sConfig.GetIntDefault("AHBot.ah.fid", 120);
     m_config->itemcount      = sConfig.GetIntDefault("AHBot.itemcount", 2);
+    m_config->buyer          = sConfig.GetBoolDefault("AHBot.Buyer.Enable", false);
+    m_config->buyerPriceFactor = sConfig.GetFloatDefault("AHBot.Buyer.PriceFactor", 1.0f);
+    if (m_config->buyerPriceFactor < 0.0f)
+        m_config->buyerPriceFactor = 0.0f;
 
     m_auctionHouseEntry = sAuctionMgr.GetAuctionHouseEntry(m_config->ahfid);
     if (!m_auctionHouseEntry)
@@ -178,6 +184,68 @@ void AuctionHouseBotMgr::AddItem(AuctionHouseBotEntry e, AuctionHouseObject *auc
     sAuctionMgr.AddAItem(item);
     auctionHouse->AddAuction(auctionEntry);
     auctionEntry->SaveToDB();
+}
+
+uint32 AuctionHouseBotMgr::GetReferencePrice(uint32 itemEntry) const
+{
+    uint32 best = 0;
+    for (auto const& e : m_items)
+    {
+        if (e.item != itemEntry || !e.stack)
+            continue;
+        uint32 perPiece = e.buyout / e.stack;
+        if (perPiece > best)
+            best = perPiece;
+    }
+    return best;
+}
+
+bool AuctionHouseBotMgr::TryBuy(AuctionEntry* auction, AuctionHouseObject* auctionHouse)
+{
+    if (!m_config || !m_config->buyer || !auction || !auctionHouse)
+        return false;
+    if (!auction->buyout || !auction->owner || auction->bidder)
+        return false;
+
+    Item* item = sAuctionMgr.GetAItem(auction->itemGuidLow);
+    if (!item)
+        return false;
+
+    uint32 reference = GetReferencePrice(auction->itemTemplate);
+    if (!reference)
+        return false;
+
+    uint64 maxPay = uint64(double(reference) * item->GetCount() * m_config->buyerPriceFactor);
+    if (uint64(auction->buyout) > maxPay)
+        return false;
+
+    // Same steps as a player buying out the auction, with nobody as the buyer.
+    auction->bidder = 0;
+    auction->bid = auction->buyout;
+
+    PlayerTransactionData data;
+    data.type = "AHBotBuyout";
+    data.parts[0].lowGuid = auction->owner;
+    data.parts[0].itemsEntries[0] = auction->itemTemplate;
+    data.parts[0].itemsCount[0] = item->GetCount();
+    data.parts[0].itemsGuid[0] = auction->itemGuidLow;
+    data.parts[1].lowGuid = 0;
+    data.parts[1].money = auction->bid;
+    sWorld.LogTransaction(data);
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "AHBot::TryBuy() : Bought auction %u (item %u x%u) from player %u for %u.",
+             auction->Id, auction->itemTemplate, item->GetCount(), auction->owner, auction->bid);
+
+    sAuctionMgr.SendAuctionSuccessfulMail(auction);     // the seller gets the money by mail, at once
+
+    sAuctionMgr.RemoveAItem(auction->itemGuidLow);
+    CharacterDatabase.PExecute("DELETE FROM `item_instance` WHERE `guid` = '%u'", auction->itemGuidLow);
+    delete item;
+
+    auctionHouse->RemoveAuction(auction);
+    auction->DeleteFromDB();
+    delete auction;
+    return true;
 }
 
 bool ChatHandler::HandleAHBotUpdateCommand(char *args)

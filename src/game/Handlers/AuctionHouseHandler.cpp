@@ -28,6 +28,7 @@
 #include "ObjectGuid.h"
 #include "Player.h"
 #include "AuctionHouseMgr.h"
+#include "AuctionHouseBotMgr.h"
 #include "TransactionLog.h"
 #include "Mail.h"
 #include "Util.h"
@@ -406,6 +407,9 @@ void WorldSession::HandleAuctionSellItem(WorldPackets::AuctionHouse::AuctionSell
     CharacterDatabase.CommitTransaction();
 
     SendAuctionCommandResult(AH, AUCTION_STARTED, AUCTION_OK);
+
+    // The auction house bot may buy the listing straight away (AHBot.Buyer.Enable).
+    sAuctionHouseBotMgr.TryBuy(AH, auctionHouse);
 }
 
 // this function is called when client bids or buys out auction

@@ -3144,11 +3144,26 @@ CharDelete.KeepDays = 30
 #        The AH bot will add items until this number of listings is reached in the auction house (this includes potential player listings).
 #        Default: 50
 #
+#    AHBot.Buyer.Enable
+#        The bot buys a player's auction the moment it is listed, if it has a buyout price that is not above
+#        the price the bot itself sells that item for (per piece, times AHBot.Buyer.PriceFactor). The seller
+#        gets the money by auction house mail at once, minus the usual cut. Listings priced higher, without
+#        a buyout, or of items the bot does not sell stay in the auction house as usual.
+#        Default: 0 - off
+#                 1 - on
+#
+#    AHBot.Buyer.PriceFactor
+#        How much the buyer is willing to pay, relative to the bot's own selling price (1.0 = the same,
+#        1.5 = up to one and a half times as much).
+#        Default: 1.0
+#
 ###################################################################################################################
 
 AHBot.Enable = 0
 AHBot.ah.fid = 120
 AHBot.itemcount = 50
+AHBot.Buyer.Enable = 0
+AHBot.Buyer.PriceFactor = 1.0
 
 ###################################################################################################################
 # PLAYER BOTS
